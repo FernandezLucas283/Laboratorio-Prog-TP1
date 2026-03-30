@@ -1,0 +1,219 @@
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.Scanner;
+
+
+public class TP1P2 {
+    
+    private Connection conexion = null;
+    private Scanner leer = new Scanner(System.in); 
+
+    public TP1P2() {
+        try {
+            conectar();
+			//prepararBaseDeDatos();
+            Menu(); 
+        } catch (SQLException e) {
+            e.printStackTrace();
+        } finally {
+            cerrar();
+        }
+    }
+
+	/*private void prepararBaseDeDatos() throws SQLException {
+    if (conexion == null) return; 
+   Statement st = conexion.createStatement();
+
+    String tablaCuentas = "CREATE TABLE IF NOT EXISTS CUENTAS (" +
+                          "Cuenta INT PRIMARY KEY, " +
+                          "NombreCliente VARCHAR(50), " +
+                          "Saldo DOUBLE, " +
+                          "TipoCuenta CHAR(1))";
+    st.executeUpdate(tablaCuentas);
+
+    String tablaMovimientos = "CREATE TABLE IF NOT EXISTS MOVIMIENTOS (" +
+                              "id INT AUTO_INCREMENT PRIMARY KEY, " +
+                              "Cuenta INT, " +
+                              "Mov CHAR(1), " +
+                              "Importe DOUBLE, " +
+                              "FOREIGN KEY (Cuenta) REFERENCES CUENTAS(Cuenta))";
+    st.executeUpdate(tablaMovimientos);
+
+    st.close();
+} */
+
+    public void conectar() throws SQLException {
+        String jdbc = "jdbc:mysql://localhost/banco";
+        conexion = DriverManager.getConnection(jdbc, "root", "0109");
+        System.out.println("Conexion OK");
+    }
+
+    public void cerrar() {
+        try {
+            if (conexion != null) conexion.close();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    
+    public void Menu() throws SQLException {
+        int opcion = 0;
+        do {
+            System.out.println("1 Realizar deposito");
+            System.out.println("2 Realizar extraccion");
+            System.out.println("3 Consultar datos");
+            System.out.print("Elija una opción: ");
+            opcion = leer.nextInt();
+            leer.nextLine();
+
+            switch (opcion) {
+                case 1: depositar(); break;
+                case 2: extraer(); break;
+                case 3: mostrarCuentas(); break;
+                case 0: System.out.println("Saliendo"); break;
+                default: System.out.println("No valido");
+            }
+        } while (opcion != 0);
+    }
+
+private void depositar() throws SQLException {
+    String INSERT_MOV = "INSERT INTO MOVIMIENTOS (Cuenta, Mov, Importe) VALUES (?, 'D', ?)";
+    String UPDATE_SALDO = "UPDATE CUENTAS SET Saldo = Saldo + ? WHERE Cuenta = ?";
+    
+    PreparedStatement mov = null, saldo = null;
+
+    try {
+        conexion.setAutoCommit(false); 
+
+        System.out.print("Numero de cuenta: ");
+        int nroCuenta = leer.nextInt();
+        System.out.print("Importe a depositar: ");
+        double importe = leer.nextDouble();
+
+        mov = conexion.prepareStatement(INSERT_MOV);
+        mov.setInt(1, nroCuenta);
+        mov.setDouble(2, importe);
+        mov.executeUpdate();
+
+        saldo = conexion.prepareStatement(UPDATE_SALDO);
+        saldo.setDouble(1, importe);
+        saldo.setInt(2, nroCuenta);
+        int filas = saldo.executeUpdate();
+
+        if (filas == 0) {
+            throw new SQLException("La cuenta no existe.");
+        }
+
+        conexion.commit(); 
+        System.out.println("Deposito exitoso y saldo actualizado");
+
+    } catch (SQLException e) {
+        conexion.rollback(); 
+        System.err.println("Error: " + e.getMessage());
+    } finally {
+        conexion.setAutoCommit(true); 
+        if (mov != null) mov.close();
+        if (saldo != null) saldo.close();
+    }
+}
+
+    private void extraer() throws SQLException {
+ 
+    String SQL_SALDO = "SELECT Saldo FROM CUENTAS WHERE Cuenta = ?";
+    String SQL_INSERT_MOV = "INSERT INTO MOVIMIENTOS (Cuenta, Mov, Importe) VALUES (?, 'E', ?)";
+    String SQL_UPDATE_SALDO = "UPDATE CUENTAS SET Saldo = Saldo - ? WHERE Cuenta = ?";
+
+    PreparedStatement stSaldo = null;
+    PreparedStatement stMov = null;
+    PreparedStatement stUpdate = null;
+    ResultSet rs = null;
+
+    try {
+        System.out.print("Numero de cuenta para extraer: ");
+        int nro = leer.nextInt();
+        System.out.print("Importe a extraer: ");
+        double importeExtraer = leer.nextDouble();
+        leer.nextLine(); 
+
+        conexion.setAutoCommit(false);
+
+        stSaldo = conexion.prepareStatement(SQL_SALDO);
+        stSaldo.setInt(1, nro);
+        rs = stSaldo.executeQuery();
+
+        if (rs.next()) {
+            double saldoDisponible = rs.getDouble("Saldo");
+
+            if (importeExtraer <= saldoDisponible) {
+                
+                stMov = conexion.prepareStatement(SQL_INSERT_MOV);
+                stMov.setInt(1, nro);
+                stMov.setDouble(2, importeExtraer);
+                stMov.executeUpdate();
+
+                stUpdate = conexion.prepareStatement(SQL_UPDATE_SALDO);
+                stUpdate.setDouble(1, importeExtraer);
+                stUpdate.setInt(2, nro);
+                stUpdate.executeUpdate();
+
+                conexion.commit();
+                System.out.println("Extraccion exitosa. Saldo actual: $" + (saldoDisponible - importeExtraer));
+            } else {
+                
+                System.out.println("Error: Saldo insuficiente. Saldo actual: $" + saldoDisponible);
+                conexion.rollback();
+            }
+        } else {
+            System.out.println("Error: La cuenta nro " + nro + " no existe.");
+            conexion.rollback();
+        }
+
+    } catch (SQLException e) {
+        if (conexion != null) {
+            conexion.rollback();
+        }
+        System.err.println("Error en la transacción: " + e.getMessage());
+    } finally {
+        conexion.setAutoCommit(true);
+        if (rs != null) rs.close();
+        if (stSaldo != null) stSaldo.close();
+        if (stMov != null) stMov.close();
+        if (stUpdate != null) stUpdate.close();
+    }
+}
+		
+   private void mostrarCuentas() throws SQLException {
+    String SQL = "SELECT Cuenta, NombreCliente, Saldo, TipoCuenta FROM CUENTAS";
+                 
+    PreparedStatement st = null;  
+    try {
+        st = conexion.prepareStatement(SQL);
+        java.sql.ResultSet set = st.executeQuery();
+                
+        while (set.next()) {
+            int nroCuenta = set.getInt("Cuenta");
+            String nombre = set.getString("NombreCliente");
+            double saldo = set.getDouble("Saldo");
+            String tipo = set.getString("TipoCuenta");
+
+            System.out.println("Cuenta: " + nroCuenta + ", Cliente: " + nombre + ", Saldo: $" + saldo + ", Tipo: " + tipo);
+        }
+    } catch (SQLException e) {
+        System.err.println("Error al intentar mostrar las cuentas.");
+        e.printStackTrace();
+    } finally {
+        if (st != null) {
+            st.close();
+        }
+    }
+}
+
+
+    public static void main(String[] args) {
+        new TP1P2();
+    }
+}
